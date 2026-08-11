@@ -26,8 +26,9 @@ exp = mlflow.get_experiment_by_name(exp_path)
 df = mlflow.search_traces(locations=[exp.experiment_id], max_results=5000,
                           order_by=["timestamp DESC"])
 
+cutoff_ms = time.time() * 1000 - minutes * 60_000
 ms = pd.to_numeric(df["request_time"], errors="coerce")   # request_time is epoch ms
-win = df[ms >= (time.time() * 1000 - minutes * 60_000)]
+win = df[ms >= cutoff_ms]
 ok = win[win["state"].astype(str).str.contains("OK")]
 dur = pd.to_numeric(ok["execution_duration"], errors="coerce").dropna()   # ms
 
@@ -48,6 +49,8 @@ traces = mlflow.search_traces(locations=[exp.experiment_id], max_results=200,
                               order_by=["timestamp DESC"], return_type="list")
 model_ms, tool_ms = 0.0, defaultdict(list)
 for t in traces:
+    if t.info.timestamp_ms < cutoff_ms:   # same window as the reliability/latency stats above
+        continue
     for s in (t.data.spans or []):
         d = (s.end_time_ns - s.start_time_ns) / 1e6
         if str(s.span_type) == "CHAT_MODEL":
@@ -57,5 +60,4 @@ for t in traces:
 tools_ms = sum(sum(v) for v in tool_ms.values())
 print(f"time split (leaf spans): model={model_ms:.0f}ms  tools={tools_ms:.0f}ms")
 for name, xs in sorted(tool_ms.items(), key=lambda kv: -(max(kv[1]) if kv[1] else 0)):
-    xs.sort()
-    print(f"  tool {name}: calls={len(xs)} p95={xs[max(0, int(len(xs) * 0.95) - 1)]:.0f}ms")
+    print(f"  tool {name}: calls={len(xs)} p95={pd.Series(xs).quantile(0.95):.0f}ms")

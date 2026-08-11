@@ -84,6 +84,8 @@ dependencies = [
     "locust>=2.32,<2.40",
     "urllib3<2.3",
     "requests",
+    "mlflow>=3.0",   # Step 6 — validate_with_mlflow.py (search_traces, span breakdown)
+    "pandas",        # Step 6 — trace DataFrame reliability/latency stats
 ]
 ```
 
