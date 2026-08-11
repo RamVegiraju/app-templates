@@ -16,6 +16,7 @@ from collections import defaultdict
 
 import mlflow
 import pandas as pd
+from mlflow.entities import Trace
 
 exp_path = sys.argv[1] if len(sys.argv) > 1 else "/Shared/<your-experiment>"
 minutes = float(sys.argv[2]) if len(sys.argv) > 2 else 10.0
@@ -42,16 +43,13 @@ else:
               f"p95={dur.quantile(.95):.0f} p99={dur.quantile(.99):.0f}")
 
 # --- Where does time go? span breakdown (bottleneck analysis) ---
-# The DataFrame's rows don't carry spans, so fetch Trace objects to walk them.
+# No second query: each `win` row already carries the full trace JSON in the "trace"
+# column, so rehydrate it to walk the spans — reusing the same time window as above.
 # Use LEAF work spans (CHAT_MODEL, TOOL) for the split; CHAIN/AGENT spans wrap their
 # children, so summing every span type would double-count nested time.
-traces = mlflow.search_traces(locations=[exp.experiment_id], max_results=200,
-                              order_by=["timestamp DESC"], return_type="list")
 model_ms, tool_ms = 0.0, defaultdict(list)
-for t in traces:
-    if t.info.timestamp_ms < cutoff_ms:   # same window as the reliability/latency stats above
-        continue
-    for s in (t.data.spans or []):
+for trace_json in win["trace"]:
+    for s in (Trace.from_json(trace_json).data.spans or []):
         d = (s.end_time_ns - s.start_time_ns) / 1e6
         if str(s.span_type) == "CHAT_MODEL":
             model_ms += d
